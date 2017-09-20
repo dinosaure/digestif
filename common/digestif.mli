@@ -60,7 +60,7 @@ module SHA256  : S
 module SHA384  : S
 module SHA512  : S
 module BLAKE2B : S
-module RIPEMD160 : S
+module RMD160  : S
 
 type hash =
   [ `MD5
@@ -70,7 +70,7 @@ type hash =
   | `SHA384
   | `SHA512
   | `BLAKE2B
-  | `RIPEMD160 ]
+  | `RMD160 ]
 
 module Bytes :
 sig
