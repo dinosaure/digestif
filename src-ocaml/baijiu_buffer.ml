@@ -4,6 +4,7 @@ sig
 
   val create : int -> buffer
   val set : buffer -> int -> char -> unit
+  val get : buffer -> int -> char
   val be32_to_cpu : buffer -> int -> int32
   val le32_to_cpu : buffer -> int -> int32
   val be64_to_cpu : buffer -> int -> int64
