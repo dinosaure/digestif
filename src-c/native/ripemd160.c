@@ -1,392 +1,367 @@
-/***********************************************************************/
-/*                                                                     */
-/*                      The Cryptokit library                          */
-/*                                                                     */
-/*            Xavier Leroy, projet Cristal, INRIA Rocquencourt         */
-/*                                                                     */
-/*  Copyright 2005 Institut National de Recherche en Informatique et   */
-/*  en Automatique.  All rights reserved.  This file is distributed    */
-/*  under the terms of the GNU Library General Public License, with    */
-/*  the special exception on linking described in file LICENSE.        */
-/*                                                                     */
-/***********************************************************************/
+/********************************************************************\
+ *
+ *      FILE:     rmd160.c
+ *
+ *      CONTENTS: A sample C-implementation of the RIPEMD-160
+ *                hash-function.
+ *      TARGET:   any computer with an ANSI C compiler
+ *
+ *      AUTHOR:   Antoon Bosselaers, ESAT-COSIC
+ *      DATE:     1 March 1996
+ *      VERSION:  1.0
+ *
+ *      Copyright (c) Katholieke Universiteit Leuven
+ *      1996, All Rights Reserved
+ *
+\********************************************************************/
 
-/* $Id$ */
-
-/* RIPEMD160 hashing */
+/* XXX(dinosaure): most inspired from the Antoon Bosselaers's
+   implementation but modified in the same way for digestif. */
 
 #include <string.h>
-#include <caml/config.h>
 #include "ripemd160.h"
+#include "bitfn.h"
 
-/* Refs:
-   - The reference implementation written by Antoon Bosselaers, 
-     available at http://www.esat.kuleuven.ac.be/~cosicart/ps/AB-9601/
-   - Handbook of Applied Cryptography, section 9.4.2, algorithm 9.55
-*/
+void digestif_rmd160_init(struct rmd160_ctx *ctx)
+{
+  memset(ctx, 0, sizeof(*ctx));
 
-/* Rotation n bits to the left */
-#define ROL(x,n) (((x) << (n)) | ((x) >> (32-(n))))
+  ctx->h[0] = 0x67452301UL;
+  ctx->h[1] = 0xefcdab89UL;
+  ctx->h[2] = 0x98badcfeUL;
+  ctx->h[3] = 0x10325476UL;
+  ctx->h[4] = 0xc3d2e1f0UL;
 
-/* The five basic functions */
-#define F(x,y,z) ((x) ^ (y) ^ (z)) 
-#define G(x,y,z) (((x) & (y)) | (~(x) & (z))) 
-#define H(x,y,z) (((x) | ~(y)) ^ (z))
-#define I(x,y,z) (((x) & (z)) | ((y) & ~(z))) 
-#define J(x,y,z) ((x) ^ ((y) | ~(z)))
-  
-/* The ten "steps" for the rounds */
+  ctx->sz[0] = 0;
+  ctx->sz[1] = 0;
+
+  ctx->n = 0;
+}
+
+/* the five basic functions F(), G() and H() */
+#define F(x, y, z)        ((x) ^ (y) ^ (z))
+#define G(x, y, z)        (((x) & (y)) | (~(x) & (z)))
+#define H(x, y, z)        (((x) | ~(y)) ^ (z))
+#define I(x, y, z)        (((x) & (z)) | ((y) & ~(z)))
+#define J(x, y, z)        ((x) ^ ((y) | ~(z)))
+
+/* the ten basic operations FF() through III() */
 #define FF(a, b, c, d, e, x, s)        {\
       (a) += F((b), (c), (d)) + (x);\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define GG(a, b, c, d, e, x, s)        {\
-      (a) += G((b), (c), (d)) + (x) + 0x5a827999U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += G((b), (c), (d)) + (x) + 0x5a827999UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define HH(a, b, c, d, e, x, s)        {\
-      (a) += H((b), (c), (d)) + (x) + 0x6ed9eba1U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += H((b), (c), (d)) + (x) + 0x6ed9eba1UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define II(a, b, c, d, e, x, s)        {\
-      (a) += I((b), (c), (d)) + (x) + 0x8f1bbcdcU;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += I((b), (c), (d)) + (x) + 0x8f1bbcdcUL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define JJ(a, b, c, d, e, x, s)        {\
-      (a) += J((b), (c), (d)) + (x) + 0xa953fd4eU;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += J((b), (c), (d)) + (x) + 0xa953fd4eUL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define FFF(a, b, c, d, e, x, s)        {\
       (a) += F((b), (c), (d)) + (x);\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define GGG(a, b, c, d, e, x, s)        {\
-      (a) += G((b), (c), (d)) + (x) + 0x7a6d76e9U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += G((b), (c), (d)) + (x) + 0x7a6d76e9UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define HHH(a, b, c, d, e, x, s)        {\
-      (a) += H((b), (c), (d)) + (x) + 0x6d703ef3U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += H((b), (c), (d)) + (x) + 0x6d703ef3UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define III(a, b, c, d, e, x, s)        {\
-      (a) += I((b), (c), (d)) + (x) + 0x5c4dd124U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += I((b), (c), (d)) + (x) + 0x5c4dd124UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 #define JJJ(a, b, c, d, e, x, s)        {\
-      (a) += J((b), (c), (d)) + (x) + 0x50a28be6U;\
-      (a) = ROL((a), (s)) + (e);\
-      (c) = ROL((c), 10);\
+      (a) += J((b), (c), (d)) + (x) + 0x50a28be6UL;\
+      (a) = rol32((a), (s)) + (e);\
+      (c) = rol32((c), 10);\
    }
 
-static void RIPEMD160_copy_and_swap(void * src, void * dst, int numwords)
+void rmd160_compress(struct rmd160_ctx *ctx, uint32_t *buf)
 {
-#ifdef ARCH_BIG_ENDIAN
-  unsigned char * s, * d;
-  unsigned char a, b;
-  for (s = src, d = dst; numwords > 0; s += 4, d += 4, numwords--) {
-    a = s[0];
-    b = s[1];
-    d[0] = s[3];
-    d[1] = s[2];
-    d[2] = b;
-    d[3] = a;
-  }
-#else
-  memcpy(dst, src, numwords * sizeof(u32));
-#endif
+   uint32_t aa = ctx->h[0],
+            bb = ctx->h[1],
+            cc = ctx->h[2],
+            dd = ctx->h[3],
+            ee = ctx->h[4];
+   uint32_t aaa = ctx->h[0],
+            bbb = ctx->h[1],
+            ccc = ctx->h[2],
+            ddd = ctx->h[3],
+            eee = ctx->h[4];
+
+   /* round 1 */
+   FF(aa, bb, cc, dd, ee, buf[ 0], 11);
+   FF(ee, aa, bb, cc, dd, buf[ 1], 14);
+   FF(dd, ee, aa, bb, cc, buf[ 2], 15);
+   FF(cc, dd, ee, aa, bb, buf[ 3], 12);
+   FF(bb, cc, dd, ee, aa, buf[ 4],  5);
+   FF(aa, bb, cc, dd, ee, buf[ 5],  8);
+   FF(ee, aa, bb, cc, dd, buf[ 6],  7);
+   FF(dd, ee, aa, bb, cc, buf[ 7],  9);
+   FF(cc, dd, ee, aa, bb, buf[ 8], 11);
+   FF(bb, cc, dd, ee, aa, buf[ 9], 13);
+   FF(aa, bb, cc, dd, ee, buf[10], 14);
+   FF(ee, aa, bb, cc, dd, buf[11], 15);
+   FF(dd, ee, aa, bb, cc, buf[12],  6);
+   FF(cc, dd, ee, aa, bb, buf[13],  7);
+   FF(bb, cc, dd, ee, aa, buf[14],  9);
+   FF(aa, bb, cc, dd, ee, buf[15],  8);
+
+   /* round 2 */
+   GG(ee, aa, bb, cc, dd, buf[ 7],  7);
+   GG(dd, ee, aa, bb, cc, buf[ 4],  6);
+   GG(cc, dd, ee, aa, bb, buf[13],  8);
+   GG(bb, cc, dd, ee, aa, buf[ 1], 13);
+   GG(aa, bb, cc, dd, ee, buf[10], 11);
+   GG(ee, aa, bb, cc, dd, buf[ 6],  9);
+   GG(dd, ee, aa, bb, cc, buf[15],  7);
+   GG(cc, dd, ee, aa, bb, buf[ 3], 15);
+   GG(bb, cc, dd, ee, aa, buf[12],  7);
+   GG(aa, bb, cc, dd, ee, buf[ 0], 12);
+   GG(ee, aa, bb, cc, dd, buf[ 9], 15);
+   GG(dd, ee, aa, bb, cc, buf[ 5],  9);
+   GG(cc, dd, ee, aa, bb, buf[ 2], 11);
+   GG(bb, cc, dd, ee, aa, buf[14],  7);
+   GG(aa, bb, cc, dd, ee, buf[11], 13);
+   GG(ee, aa, bb, cc, dd, buf[ 8], 12);
+
+   /* round 3 */
+   HH(dd, ee, aa, bb, cc, buf[ 3], 11);
+   HH(cc, dd, ee, aa, bb, buf[10], 13);
+   HH(bb, cc, dd, ee, aa, buf[14],  6);
+   HH(aa, bb, cc, dd, ee, buf[ 4],  7);
+   HH(ee, aa, bb, cc, dd, buf[ 9], 14);
+   HH(dd, ee, aa, bb, cc, buf[15],  9);
+   HH(cc, dd, ee, aa, bb, buf[ 8], 13);
+   HH(bb, cc, dd, ee, aa, buf[ 1], 15);
+   HH(aa, bb, cc, dd, ee, buf[ 2], 14);
+   HH(ee, aa, bb, cc, dd, buf[ 7],  8);
+   HH(dd, ee, aa, bb, cc, buf[ 0], 13);
+   HH(cc, dd, ee, aa, bb, buf[ 6],  6);
+   HH(bb, cc, dd, ee, aa, buf[13],  5);
+   HH(aa, bb, cc, dd, ee, buf[11], 12);
+   HH(ee, aa, bb, cc, dd, buf[ 5],  7);
+   HH(dd, ee, aa, bb, cc, buf[12],  5);
+
+   /* round 4 */
+   II(cc, dd, ee, aa, bb, buf[ 1], 11);
+   II(bb, cc, dd, ee, aa, buf[ 9], 12);
+   II(aa, bb, cc, dd, ee, buf[11], 14);
+   II(ee, aa, bb, cc, dd, buf[10], 15);
+   II(dd, ee, aa, bb, cc, buf[ 0], 14);
+   II(cc, dd, ee, aa, bb, buf[ 8], 15);
+   II(bb, cc, dd, ee, aa, buf[12],  9);
+   II(aa, bb, cc, dd, ee, buf[ 4],  8);
+   II(ee, aa, bb, cc, dd, buf[13],  9);
+   II(dd, ee, aa, bb, cc, buf[ 3], 14);
+   II(cc, dd, ee, aa, bb, buf[ 7],  5);
+   II(bb, cc, dd, ee, aa, buf[15],  6);
+   II(aa, bb, cc, dd, ee, buf[14],  8);
+   II(ee, aa, bb, cc, dd, buf[ 5],  6);
+   II(dd, ee, aa, bb, cc, buf[ 6],  5);
+   II(cc, dd, ee, aa, bb, buf[ 2], 12);
+
+   /* round 5 */
+   JJ(bb, cc, dd, ee, aa, buf[ 4],  9);
+   JJ(aa, bb, cc, dd, ee, buf[ 0], 15);
+   JJ(ee, aa, bb, cc, dd, buf[ 5],  5);
+   JJ(dd, ee, aa, bb, cc, buf[ 9], 11);
+   JJ(cc, dd, ee, aa, bb, buf[ 7],  6);
+   JJ(bb, cc, dd, ee, aa, buf[12],  8);
+   JJ(aa, bb, cc, dd, ee, buf[ 2], 13);
+   JJ(ee, aa, bb, cc, dd, buf[10], 12);
+   JJ(dd, ee, aa, bb, cc, buf[14],  5);
+   JJ(cc, dd, ee, aa, bb, buf[ 1], 12);
+   JJ(bb, cc, dd, ee, aa, buf[ 3], 13);
+   JJ(aa, bb, cc, dd, ee, buf[ 8], 14);
+   JJ(ee, aa, bb, cc, dd, buf[11], 11);
+   JJ(dd, ee, aa, bb, cc, buf[ 6],  8);
+   JJ(cc, dd, ee, aa, bb, buf[15],  5);
+   JJ(bb, cc, dd, ee, aa, buf[13],  6);
+
+   /* parallel round 1 */
+   JJJ(aaa, bbb, ccc, ddd, eee, buf[ 5],  8);
+   JJJ(eee, aaa, bbb, ccc, ddd, buf[14],  9);
+   JJJ(ddd, eee, aaa, bbb, ccc, buf[ 7],  9);
+   JJJ(ccc, ddd, eee, aaa, bbb, buf[ 0], 11);
+   JJJ(bbb, ccc, ddd, eee, aaa, buf[ 9], 13);
+   JJJ(aaa, bbb, ccc, ddd, eee, buf[ 2], 15);
+   JJJ(eee, aaa, bbb, ccc, ddd, buf[11], 15);
+   JJJ(ddd, eee, aaa, bbb, ccc, buf[ 4],  5);
+   JJJ(ccc, ddd, eee, aaa, bbb, buf[13],  7);
+   JJJ(bbb, ccc, ddd, eee, aaa, buf[ 6],  7);
+   JJJ(aaa, bbb, ccc, ddd, eee, buf[15],  8);
+   JJJ(eee, aaa, bbb, ccc, ddd, buf[ 8], 11);
+   JJJ(ddd, eee, aaa, bbb, ccc, buf[ 1], 14);
+   JJJ(ccc, ddd, eee, aaa, bbb, buf[10], 14);
+   JJJ(bbb, ccc, ddd, eee, aaa, buf[ 3], 12);
+   JJJ(aaa, bbb, ccc, ddd, eee, buf[12],  6);
+
+   /* parallel round 2 */
+   III(eee, aaa, bbb, ccc, ddd, buf[ 6],  9);
+   III(ddd, eee, aaa, bbb, ccc, buf[11], 13);
+   III(ccc, ddd, eee, aaa, bbb, buf[ 3], 15);
+   III(bbb, ccc, ddd, eee, aaa, buf[ 7],  7);
+   III(aaa, bbb, ccc, ddd, eee, buf[ 0], 12);
+   III(eee, aaa, bbb, ccc, ddd, buf[13],  8);
+   III(ddd, eee, aaa, bbb, ccc, buf[ 5],  9);
+   III(ccc, ddd, eee, aaa, bbb, buf[10], 11);
+   III(bbb, ccc, ddd, eee, aaa, buf[14],  7);
+   III(aaa, bbb, ccc, ddd, eee, buf[15],  7);
+   III(eee, aaa, bbb, ccc, ddd, buf[ 8], 12);
+   III(ddd, eee, aaa, bbb, ccc, buf[12],  7);
+   III(ccc, ddd, eee, aaa, bbb, buf[ 4],  6);
+   III(bbb, ccc, ddd, eee, aaa, buf[ 9], 15);
+   III(aaa, bbb, ccc, ddd, eee, buf[ 1], 13);
+   III(eee, aaa, bbb, ccc, ddd, buf[ 2], 11);
+
+   /* parallel round 3 */
+   HHH(ddd, eee, aaa, bbb, ccc, buf[15],  9);
+   HHH(ccc, ddd, eee, aaa, bbb, buf[ 5],  7);
+   HHH(bbb, ccc, ddd, eee, aaa, buf[ 1], 15);
+   HHH(aaa, bbb, ccc, ddd, eee, buf[ 3], 11);
+   HHH(eee, aaa, bbb, ccc, ddd, buf[ 7],  8);
+   HHH(ddd, eee, aaa, bbb, ccc, buf[14],  6);
+   HHH(ccc, ddd, eee, aaa, bbb, buf[ 6],  6);
+   HHH(bbb, ccc, ddd, eee, aaa, buf[ 9], 14);
+   HHH(aaa, bbb, ccc, ddd, eee, buf[11], 12);
+   HHH(eee, aaa, bbb, ccc, ddd, buf[ 8], 13);
+   HHH(ddd, eee, aaa, bbb, ccc, buf[12],  5);
+   HHH(ccc, ddd, eee, aaa, bbb, buf[ 2], 14);
+   HHH(bbb, ccc, ddd, eee, aaa, buf[10], 13);
+   HHH(aaa, bbb, ccc, ddd, eee, buf[ 0], 13);
+   HHH(eee, aaa, bbb, ccc, ddd, buf[ 4],  7);
+   HHH(ddd, eee, aaa, bbb, ccc, buf[13],  5);
+
+   /* parallel round 4 */
+   GGG(ccc, ddd, eee, aaa, bbb, buf[ 8], 15);
+   GGG(bbb, ccc, ddd, eee, aaa, buf[ 6],  5);
+   GGG(aaa, bbb, ccc, ddd, eee, buf[ 4],  8);
+   GGG(eee, aaa, bbb, ccc, ddd, buf[ 1], 11);
+   GGG(ddd, eee, aaa, bbb, ccc, buf[ 3], 14);
+   GGG(ccc, ddd, eee, aaa, bbb, buf[11], 14);
+   GGG(bbb, ccc, ddd, eee, aaa, buf[15],  6);
+   GGG(aaa, bbb, ccc, ddd, eee, buf[ 0], 14);
+   GGG(eee, aaa, bbb, ccc, ddd, buf[ 5],  6);
+   GGG(ddd, eee, aaa, bbb, ccc, buf[12],  9);
+   GGG(ccc, ddd, eee, aaa, bbb, buf[ 2], 12);
+   GGG(bbb, ccc, ddd, eee, aaa, buf[13],  9);
+   GGG(aaa, bbb, ccc, ddd, eee, buf[ 9], 12);
+   GGG(eee, aaa, bbb, ccc, ddd, buf[ 7],  5);
+   GGG(ddd, eee, aaa, bbb, ccc, buf[10], 15);
+   GGG(ccc, ddd, eee, aaa, bbb, buf[14],  8);
+
+   /* parallel round 5 */
+   FFF(bbb, ccc, ddd, eee, aaa, buf[12] ,  8);
+   FFF(aaa, bbb, ccc, ddd, eee, buf[15] ,  5);
+   FFF(eee, aaa, bbb, ccc, ddd, buf[10] , 12);
+   FFF(ddd, eee, aaa, bbb, ccc, buf[ 4] ,  9);
+   FFF(ccc, ddd, eee, aaa, bbb, buf[ 1] , 12);
+   FFF(bbb, ccc, ddd, eee, aaa, buf[ 5] ,  5);
+   FFF(aaa, bbb, ccc, ddd, eee, buf[ 8] , 14);
+   FFF(eee, aaa, bbb, ccc, ddd, buf[ 7] ,  6);
+   FFF(ddd, eee, aaa, bbb, ccc, buf[ 6] ,  8);
+   FFF(ccc, ddd, eee, aaa, bbb, buf[ 2] , 13);
+   FFF(bbb, ccc, ddd, eee, aaa, buf[13] ,  6);
+   FFF(aaa, bbb, ccc, ddd, eee, buf[14] ,  5);
+   FFF(eee, aaa, bbb, ccc, ddd, buf[ 0] , 15);
+   FFF(ddd, eee, aaa, bbb, ccc, buf[ 3] , 13);
+   FFF(ccc, ddd, eee, aaa, bbb, buf[ 9] , 11);
+   FFF(bbb, ccc, ddd, eee, aaa, buf[11] , 11);
+
+   /* combine results */
+   ddd += cc + ctx->h[1]; /* final result for MDbuf[0] */
+   ctx->h[1] = ctx->h[2] + dd + eee;
+   ctx->h[2] = ctx->h[3] + ee + aaa;
+   ctx->h[3] = ctx->h[4] + aa + bbb;
+   ctx->h[4] = ctx->h[0] + bb + ccc;
+   ctx->h[0] = ddd;
 }
 
-static void RIPEMD160_compress(struct ripemd160_ctx * ctx)
+void digestif_rmd160_update(struct rmd160_ctx *ctx, uint8_t *data, uint32_t len)
 {
-  register u32 a, b, c, d, e;
-  u32 aa, bb, cc, dd, ee;
-  u32 data[16];
+  uint32_t t;
 
-  /* Convert buffer data to 16 little-endian integers */
-  RIPEMD160_copy_and_swap(ctx->buffer, data, 16);
+  /* update length */
+  t = ctx->sz[0];
 
-  /* Perform "left" rounds */
-  a = ctx->state[0];
-  b = ctx->state[1];
-  c = ctx->state[2];
-  d = ctx->state[3];
-  e = ctx->state[4];
+  if ((ctx->sz[0] = t + (len << 3)) < t)
+    ctx->sz[1]++; /* carry from low 32 bits to high 32 bits. */
 
-  /* left round 1 */
-  FF(a, b, c, d, e, data[ 0], 11);
-  FF(e, a, b, c, d, data[ 1], 14);
-  FF(d, e, a, b, c, data[ 2], 15);
-  FF(c, d, e, a, b, data[ 3], 12);
-  FF(b, c, d, e, a, data[ 4],  5);
-  FF(a, b, c, d, e, data[ 5],  8);
-  FF(e, a, b, c, d, data[ 6],  7);
-  FF(d, e, a, b, c, data[ 7],  9);
-  FF(c, d, e, a, b, data[ 8], 11);
-  FF(b, c, d, e, a, data[ 9], 13);
-  FF(a, b, c, d, e, data[10], 14);
-  FF(e, a, b, c, d, data[11], 15);
-  FF(d, e, a, b, c, data[12],  6);
-  FF(c, d, e, a, b, data[13],  7);
-  FF(b, c, d, e, a, data[14],  9);
-  FF(a, b, c, d, e, data[15],  8);
-                             
-   /* left round 2 */
-  GG(e, a, b, c, d, data[ 7],  7);
-  GG(d, e, a, b, c, data[ 4],  6);
-  GG(c, d, e, a, b, data[13],  8);
-  GG(b, c, d, e, a, data[ 1], 13);
-  GG(a, b, c, d, e, data[10], 11);
-  GG(e, a, b, c, d, data[ 6],  9);
-  GG(d, e, a, b, c, data[15],  7);
-  GG(c, d, e, a, b, data[ 3], 15);
-  GG(b, c, d, e, a, data[12],  7);
-  GG(a, b, c, d, e, data[ 0], 12);
-  GG(e, a, b, c, d, data[ 9], 15);
-  GG(d, e, a, b, c, data[ 5],  9);
-  GG(c, d, e, a, b, data[ 2], 11);
-  GG(b, c, d, e, a, data[14],  7);
-  GG(a, b, c, d, e, data[11], 13);
-  GG(e, a, b, c, d, data[ 8], 12);
+  ctx->sz[1] += (len >> 29);
 
-   /* left round 3 */
-  HH(d, e, a, b, c, data[ 3], 11);
-  HH(c, d, e, a, b, data[10], 13);
-  HH(b, c, d, e, a, data[14],  6);
-  HH(a, b, c, d, e, data[ 4],  7);
-  HH(e, a, b, c, d, data[ 9], 14);
-  HH(d, e, a, b, c, data[15],  9);
-  HH(c, d, e, a, b, data[ 8], 13);
-  HH(b, c, d, e, a, data[ 1], 15);
-  HH(a, b, c, d, e, data[ 2], 14);
-  HH(e, a, b, c, d, data[ 7],  8);
-  HH(d, e, a, b, c, data[ 0], 13);
-  HH(c, d, e, a, b, data[ 6],  6);
-  HH(b, c, d, e, a, data[13],  5);
-  HH(a, b, c, d, e, data[11], 12);
-  HH(e, a, b, c, d, data[ 5],  7);
-  HH(d, e, a, b, c, data[12],  5);
+  /* if data was left in buffer, pad it with fresh data and munge/eat block. */
+  if (ctx->n != 0)
+    {
+      t = 64 - ctx->n;
 
-   /* left round 4 */
-  II(c, d, e, a, b, data[ 1], 11);
-  II(b, c, d, e, a, data[ 9], 12);
-  II(a, b, c, d, e, data[11], 14);
-  II(e, a, b, c, d, data[10], 15);
-  II(d, e, a, b, c, data[ 0], 14);
-  II(c, d, e, a, b, data[ 8], 15);
-  II(b, c, d, e, a, data[12],  9);
-  II(a, b, c, d, e, data[ 4],  8);
-  II(e, a, b, c, d, data[13],  9);
-  II(d, e, a, b, c, data[ 3], 14);
-  II(c, d, e, a, b, data[ 7],  5);
-  II(b, c, d, e, a, data[15],  6);
-  II(a, b, c, d, e, data[14],  8);
-  II(e, a, b, c, d, data[ 5],  6);
-  II(d, e, a, b, c, data[ 6],  5);
-  II(c, d, e, a, b, data[ 2], 12);
+      if (len < t) /* not enough to munge. */
+        {
+          memcpy(ctx->buf + ctx->n, data, len);
+          ctx->n += len;
+          return;
+        }
 
-   /* left round 5 */
-  JJ(b, c, d, e, a, data[ 4],  9);
-  JJ(a, b, c, d, e, data[ 0], 15);
-  JJ(e, a, b, c, d, data[ 5],  5);
-  JJ(d, e, a, b, c, data[ 9], 11);
-  JJ(c, d, e, a, b, data[ 7],  6);
-  JJ(b, c, d, e, a, data[12],  8);
-  JJ(a, b, c, d, e, data[ 2], 13);
-  JJ(e, a, b, c, d, data[10], 12);
-  JJ(d, e, a, b, c, data[14],  5);
-  JJ(c, d, e, a, b, data[ 1], 12);
-  JJ(b, c, d, e, a, data[ 3], 13);
-  JJ(a, b, c, d, e, data[ 8], 14);
-  JJ(e, a, b, c, d, data[11], 11);
-  JJ(d, e, a, b, c, data[ 6],  8);
-  JJ(c, d, e, a, b, data[15],  5);
-  JJ(b, c, d, e, a, data[13],  6);
-
-  /* Save result of left rounds */
-  aa = a; bb = b; cc = c; dd = d; ee = e;
-
-  /* Perform "right" rounds */
-  a = ctx->state[0];
-  b = ctx->state[1];
-  c = ctx->state[2];
-  d = ctx->state[3];
-  e = ctx->state[4];
-
-  /* right round 1 */
-  JJJ(a, b, c, d, e, data[ 5],  8);
-  JJJ(e, a, b, c, d, data[14],  9);
-  JJJ(d, e, a, b, c, data[ 7],  9);
-  JJJ(c, d, e, a, b, data[ 0], 11);
-  JJJ(b, c, d, e, a, data[ 9], 13);
-  JJJ(a, b, c, d, e, data[ 2], 15);
-  JJJ(e, a, b, c, d, data[11], 15);
-  JJJ(d, e, a, b, c, data[ 4],  5);
-  JJJ(c, d, e, a, b, data[13],  7);
-  JJJ(b, c, d, e, a, data[ 6],  7);
-  JJJ(a, b, c, d, e, data[15],  8);
-  JJJ(e, a, b, c, d, data[ 8], 11);
-  JJJ(d, e, a, b, c, data[ 1], 14);
-  JJJ(c, d, e, a, b, data[10], 14);
-  JJJ(b, c, d, e, a, data[ 3], 12);
-  JJJ(a, b, c, d, e, data[12],  6);
-
-   /* right round 2 */
-  III(e, a, b, c, d, data[ 6],  9); 
-  III(d, e, a, b, c, data[11], 13);
-  III(c, d, e, a, b, data[ 3], 15);
-  III(b, c, d, e, a, data[ 7],  7);
-  III(a, b, c, d, e, data[ 0], 12);
-  III(e, a, b, c, d, data[13],  8);
-  III(d, e, a, b, c, data[ 5],  9);
-  III(c, d, e, a, b, data[10], 11);
-  III(b, c, d, e, a, data[14],  7);
-  III(a, b, c, d, e, data[15],  7);
-  III(e, a, b, c, d, data[ 8], 12);
-  III(d, e, a, b, c, data[12],  7);
-  III(c, d, e, a, b, data[ 4],  6);
-  III(b, c, d, e, a, data[ 9], 15);
-  III(a, b, c, d, e, data[ 1], 13);
-  III(e, a, b, c, d, data[ 2], 11);
-
-   /* right round 3 */
-  HHH(d, e, a, b, c, data[15],  9);
-  HHH(c, d, e, a, b, data[ 5],  7);
-  HHH(b, c, d, e, a, data[ 1], 15);
-  HHH(a, b, c, d, e, data[ 3], 11);
-  HHH(e, a, b, c, d, data[ 7],  8);
-  HHH(d, e, a, b, c, data[14],  6);
-  HHH(c, d, e, a, b, data[ 6],  6);
-  HHH(b, c, d, e, a, data[ 9], 14);
-  HHH(a, b, c, d, e, data[11], 12);
-  HHH(e, a, b, c, d, data[ 8], 13);
-  HHH(d, e, a, b, c, data[12],  5);
-  HHH(c, d, e, a, b, data[ 2], 14);
-  HHH(b, c, d, e, a, data[10], 13);
-  HHH(a, b, c, d, e, data[ 0], 13);
-  HHH(e, a, b, c, d, data[ 4],  7);
-  HHH(d, e, a, b, c, data[13],  5);
-
-   /* right round 4 */   
-  GGG(c, d, e, a, b, data[ 8], 15);
-  GGG(b, c, d, e, a, data[ 6],  5);
-  GGG(a, b, c, d, e, data[ 4],  8);
-  GGG(e, a, b, c, d, data[ 1], 11);
-  GGG(d, e, a, b, c, data[ 3], 14);
-  GGG(c, d, e, a, b, data[11], 14);
-  GGG(b, c, d, e, a, data[15],  6);
-  GGG(a, b, c, d, e, data[ 0], 14);
-  GGG(e, a, b, c, d, data[ 5],  6);
-  GGG(d, e, a, b, c, data[12],  9);
-  GGG(c, d, e, a, b, data[ 2], 12);
-  GGG(b, c, d, e, a, data[13],  9);
-  GGG(a, b, c, d, e, data[ 9], 12);
-  GGG(e, a, b, c, d, data[ 7],  5);
-  GGG(d, e, a, b, c, data[10], 15);
-  GGG(c, d, e, a, b, data[14],  8);
-
-   /* right round 5 */
-  FFF(b, c, d, e, a, data[12] ,  8);
-  FFF(a, b, c, d, e, data[15] ,  5);
-  FFF(e, a, b, c, d, data[10] , 12);
-  FFF(d, e, a, b, c, data[ 4] ,  9);
-  FFF(c, d, e, a, b, data[ 1] , 12);
-  FFF(b, c, d, e, a, data[ 5] ,  5);
-  FFF(a, b, c, d, e, data[ 8] , 14);
-  FFF(e, a, b, c, d, data[ 7] ,  6);
-  FFF(d, e, a, b, c, data[ 6] ,  8);
-  FFF(c, d, e, a, b, data[ 2] , 13);
-  FFF(b, c, d, e, a, data[13] ,  6);
-  FFF(a, b, c, d, e, data[14] ,  5);
-  FFF(e, a, b, c, d, data[ 0] , 15);
-  FFF(d, e, a, b, c, data[ 3] , 13);
-  FFF(c, d, e, a, b, data[ 9] , 11);
-  FFF(b, c, d, e, a, data[11] , 11);
-
-  /* Update chaining values */
-  d += cc + ctx->state[1];
-  ctx->state[1] = ctx->state[2] + dd + e;
-  ctx->state[2] = ctx->state[3] + ee + a;
-  ctx->state[3] = ctx->state[4] + aa + b;
-  ctx->state[4] = ctx->state[0] + bb + c;
-  ctx->state[0] = d;
-}
-
-void digestif_ripemd160_init(struct ripemd160_ctx * ctx)
-{
-  ctx->state[0] = 0x67452301U;
-  ctx->state[1] = 0xEFCDAB89U;
-  ctx->state[2] = 0x98BADCFEU;
-  ctx->state[3] = 0x10325476U;
-  ctx->state[4] = 0xC3D2E1F0U;
-  ctx->numbytes = 0;
-  ctx->length[0] = 0;
-  ctx->length[1] = 0;
-}
-
-void digestif_ripemd160_update(struct ripemd160_ctx * ctx, unsigned char * data,
-                        unsigned long len)
-{
-  u32 t;
-
-  /* Update length */
-  t = ctx->length[0];
-  if ((ctx->length[0] = t + (u32) (len << 3)) < t)
-    ctx->length[1]++;    /* carry from low 32 bits to high 32 bits */
-  ctx->length[1] += (u32) (len >> 29);
-
-  /* If data was left in buffer, pad it with fresh data and munge block */
-  if (ctx->numbytes != 0) {
-    t = 64 - ctx->numbytes;
-    if (len < t) {
-      memcpy(ctx->buffer + ctx->numbytes, data, len);
-      ctx->numbytes += len;
-      return;
+      memcpy(ctx->buf + ctx->n, data, t);
+      rmd160_compress(ctx, (uint32_t *) ctx->buf);
+      data += t;
+      len -= t;
     }
-    memcpy(ctx->buffer + ctx->numbytes, data, t);
-    RIPEMD160_compress(ctx);
-    data += t;
-    len -= t;
-  }
-  /* Munge data in 64-byte chunks */
-  while (len >= 64) {
-    memcpy(ctx->buffer, data, 64);
-    RIPEMD160_compress(ctx);
-    data += 64;
-    len -= 64;
-  }
-  /* Save remaining data */
-  memcpy(ctx->buffer, data, len);
-  ctx->numbytes = len;
+
+  /* munge/eat data in 64 bytes chunks. */
+  while (len >= 64)
+    {
+      /* memcpy(ctx->buf, data, 64); XXX(dinosaure): from X.L. but
+         avoid to be fast. */
+      rmd160_compress(ctx, (uint32_t *) data);
+      data += 64;
+      len -= 64;
+    }
+
+  /* save remaining data. */
+  memcpy(ctx->buf, data, len);
+  ctx->n = len;
 }
 
-void digestif_ripemd160_finalize(struct ripemd160_ctx * ctx, unsigned char output[20])
+void digestif_rmd160_finalize(struct rmd160_ctx *ctx, uint8_t *out)
 {
-  int i = ctx->numbytes;
+  int i = ctx->n;
 
-  /* Set first char of padding to 0x80. There is always room. */
-  ctx->buffer[i++] = 0x80;
-  /* If we do not have room for the length (8 bytes), pad to 64 bytes
-     with zeroes and munge the data block */
-  if (i > 56) {
-    memset(ctx->buffer + i, 0, 64 - i);
-    RIPEMD160_compress(ctx);
-    i = 0;
-  }
-  /* Pad to byte 56 with zeroes */
-  memset(ctx->buffer + i, 0, 56 - i);
-  /* Add length in little-endian */
-  RIPEMD160_copy_and_swap(ctx->length, ctx->buffer + 56, 2);
-  /* Munge the final block */
-  RIPEMD160_compress(ctx);
-  /* Final hash value is in ctx->state modulo little-endian conversion */
-  RIPEMD160_copy_and_swap(ctx->state, output, 5);
+  ctx->buf[i++] = 0x80;
+
+  if (i > 55)
+    {
+      memset(ctx->buf + i, 0, 64 - i);
+      rmd160_compress(ctx, (uint32_t *) ctx->buf);
+      i = 0;
+    }
+
+  memset(ctx->buf + i, 0, 56 - i);
+  cpu_to_le32_array((uint32_t *) (ctx->buf + 56), ctx->sz, 2);
+  rmd160_compress(ctx, (uint32_t *) ctx->buf);
+ 
+cpu_to_le32_array((uint32_t *) out, ctx->h, 5);
 }
+
+

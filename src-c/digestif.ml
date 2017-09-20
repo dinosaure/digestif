@@ -303,7 +303,7 @@ struct
 end
 
 module BLAKE2B = Make_BLAKE2B(Native.BLAKE2B) (struct let (digest_size, block_size) = (64, 128) end)
-module RIPEMD160 : S = Make (Native.RIPEMD160) (struct let (digest_size, block_size) = (20, 64) end)
+module RMD160 : S = Make (Native.RMD160) (struct let (digest_size, block_size) = (20, 64) end)
 
 type hash =
   [ `MD5
@@ -313,7 +313,7 @@ type hash =
   | `SHA384
   | `SHA512
   | `BLAKE2B
-  | `RIPEMD160 ]
+  | `RMD160 ]
 
 let module_of = function
   | `MD5     -> (module MD5     : S)
@@ -323,7 +323,7 @@ let module_of = function
   | `SHA384  -> (module SHA384  : S)
   | `SHA512  -> (module SHA512  : S)
   | `BLAKE2B -> (module BLAKE2B : S)
-  | `RIPEMD160 -> (module RIPEMD160 : S)
+  | `RMD160  -> (module RMD160  : S)
 
 module Bytes =
 struct
