@@ -192,13 +192,21 @@ let results_rmd160_by, results_rmd160_bi =
 
 let tests () =
   Alcotest.run "digestif"
-    [ "md5",     makes ~name:"md5"     bytes `MD5     keys_by inputs_by results_md5_by
-    ; "sha1",    makes ~name:"sha1"    bytes `SHA1    keys_by inputs_by results_sha1_by
-    ; "sha224",  makes ~name:"sha224"  bytes `SHA224  keys_by inputs_by results_sha224_by
-    ; "sha256",  makes ~name:"sha256"  bytes `SHA256  keys_by inputs_by results_sha256_by
-    ; "sha384",  makes ~name:"sha384"  bytes `SHA384  keys_by inputs_by results_sha384_by
-    ; "sha512",  makes ~name:"sha512"  bytes `SHA512  keys_by inputs_by results_sha512_by
-    ; "blake2b", makes ~name:"blake2b" bytes `BLAKE2B keys_by inputs_by results_blake2b_by
-    ; "rmd160",  makes ~name:"rmd160"  bytes `RMD160  keys_by inputs_by results_rmd160_by ]
+    [ "md5",                 makes ~name:"md5"     bytes     `MD5     keys_by inputs_by results_md5_by
+    ; "md5 (bigstring)",     makes ~name:"md5"     bigstring `MD5     keys_bi inputs_bi results_md5_bi
+    ; "sha1",                makes ~name:"sha1"    bytes     `SHA1    keys_by inputs_by results_sha1_by
+    ; "sha1 (bigstring)",    makes ~name:"sha1"    bigstring `SHA1    keys_bi inputs_bi results_sha1_bi
+    ; "sha224",              makes ~name:"sha224"  bytes     `SHA224  keys_by inputs_by results_sha224_by
+    ; "sha224 (bigstring)",  makes ~name:"sha224"  bigstring `SHA224  keys_bi inputs_bi results_sha224_bi
+    ; "sha256",              makes ~name:"sha256"  bytes     `SHA256  keys_by inputs_by results_sha256_by
+    ; "sha256 (bigstring)",  makes ~name:"sha256"  bigstring `SHA256  keys_bi inputs_bi results_sha256_bi
+    ; "sha384",              makes ~name:"sha384"  bytes     `SHA384  keys_by inputs_by results_sha384_by
+    ; "sha384 (bigstring)",  makes ~name:"sha384"  bigstring `SHA384  keys_bi inputs_bi results_sha384_bi
+    ; "sha512",              makes ~name:"sha512"  bytes     `SHA512  keys_by inputs_by results_sha512_by
+    ; "sha512 (bigstring)",  makes ~name:"sha512"  bigstring `SHA512  keys_bi inputs_bi results_sha512_bi
+    ; "blake2b",             makes ~name:"blake2b" bytes     `BLAKE2B keys_by inputs_by results_blake2b_by
+    ; "blake2b (bigstring)", makes ~name:"blake2b" bigstring `BLAKE2B keys_bi inputs_bi results_blake2b_bi
+    ; "rmd160",              makes ~name:"rmd160"  bytes     `RMD160  keys_by inputs_by results_rmd160_by
+    ; "rmd160 (bigstring)",  makes ~name:"rmd160"  bigstring `RMD160  keys_bi inputs_bi results_rmd160_bi ]
 
 let () = tests ()
