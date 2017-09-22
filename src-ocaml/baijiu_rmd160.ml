@@ -6,6 +6,8 @@ sig
 
   val init : unit -> ctx
   val feed : ctx -> buffer -> int -> int -> unit
+  val feed_bytes : ctx -> Bytes.t -> int -> int -> unit
+  val feed_bigstring : ctx -> (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t -> int -> int -> unit
   val get  : ctx -> t
 end
 
@@ -126,7 +128,10 @@ module Make (B : Baijiu_buffer.S)
     a := (rol32 !a s) + !e;
     c := (rol32 !c 10)
 
-  let rmd160_do_chunk ctx buff off =
+  let rmd160_do_chunk : type a.
+       le32_to_cpu:(a -> int -> int32)
+    -> ctx -> a -> int -> unit
+    = fun ~le32_to_cpu ctx buff off ->
     let aa, bb, cc, dd, ee, aaa, bbb, ccc, ddd, eee =
       ref ctx.h.(0),
       ref ctx.h.(1),
@@ -143,7 +148,7 @@ module Make (B : Baijiu_buffer.S)
     let w = Array.make 16 0l in
 
     for i = 0 to 15
-    do w.(i) <- B.le32_to_cpu buff (off + (i * 4)) done;
+    do w.(i) <- le32_to_cpu buff (off + (i * 4)) done;
 
     (ff aa bb cc dd ee w.( 0) 11);
     (ff ee aa bb cc dd w.( 1) 14);
@@ -328,7 +333,11 @@ module Make (B : Baijiu_buffer.S)
 
   exception Leave
 
-  let feed ctx buf off len =
+  let feed : type a.
+       le32_to_cpu:(a -> int -> int32)
+    -> blit:(a -> int -> B.buffer -> int -> int -> unit)
+    -> ctx -> a -> int -> int -> unit
+    = fun ~le32_to_cpu ~blit ctx buf off len ->
     let t = ref ctx.s.(0) in
     let off = ref off in
     let len = ref len in
@@ -347,26 +356,30 @@ module Make (B : Baijiu_buffer.S)
 
         if !len < t
         then begin
-          B.blit buf !off ctx.b ctx.n !len;
+          blit buf !off ctx.b ctx.n !len;
           ctx.n <- ctx.n + !len;
           raise Leave
         end;
 
-        B.blit buf !off ctx.b ctx.n t;
-        rmd160_do_chunk ctx ctx.b 0;
+        blit buf !off ctx.b ctx.n t;
+        rmd160_do_chunk ~le32_to_cpu:B.le32_to_cpu ctx ctx.b 0;
         off := !off + t;
         len := !len + t;
       end;
 
       while !len >= 64
-      do rmd160_do_chunk ctx buf !off;
+      do rmd160_do_chunk ~le32_to_cpu ctx buf !off;
          off := !off + 64;
          len := !len - 64;
       done;
 
-      B.blit buf !off ctx.b 0 !len;
+      blit buf !off ctx.b 0 !len;
       ctx.n <- !len;
     with Leave -> ()
+
+  let feed_bytes ctx buf off len = feed ~blit:B.blit_from_bytes ~le32_to_cpu:B.le32_from_bytes_to_cpu ctx buf off len
+  let feed_bigstring ctx buf off len = feed ~blit:B.blit_from_bigstring ~le32_to_cpu:B.le32_from_bigstring_to_cpu ctx buf off len
+  let feed ctx buf off len = feed ~blit:B.blit ~le32_to_cpu:B.le32_to_cpu ctx buf off len
 
   let get ctx =
     let i = ref ctx.n in
@@ -377,14 +390,14 @@ module Make (B : Baijiu_buffer.S)
     if !i > 55
     then begin
       B.fill ctx.b !i (64 - !i) '\x00';
-      rmd160_do_chunk ctx ctx.b 0;
+      rmd160_do_chunk ~le32_to_cpu:B.le32_to_cpu ctx ctx.b 0;
       i := 0;
     end;
 
     B.fill ctx.b !i (56 - !i) '\x00';
     B.cpu_to_le32 ctx.b 56 ctx.s.(0);
     B.cpu_to_le32 ctx.b 60 ctx.s.(1);
-    rmd160_do_chunk ctx ctx.b 0;
+    rmd160_do_chunk ~le32_to_cpu:B.le32_to_cpu ctx ctx.b 0;
 
     for i = 0 to 4
     do B.cpu_to_le32 res (i * 4) ctx.h.(i) done;
