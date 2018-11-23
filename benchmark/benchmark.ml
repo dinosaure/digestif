@@ -19,48 +19,18 @@ module Monotonic_clock = struct
   let blit witness v = v := Oclock.gettime witness
 end
 
-module Realtime_clock = struct
-  type witness = int
-  type value = int64 ref
-  type label = string
-
-  let make () = Oclock.realtime
-  let load _witness = ()
-  let unload _witness = ()
-  let float v = Int64.to_float !v
-  let label _witness = "realtime-clock"
-  let diff a b = {contents= Int64.sub !b !a}
-  let epsilon () = {contents= 0L}
-  let blit witness v = v := Oclock.gettime witness
-end
-
-module Blocks = struct
+module Block = struct
   type witness = unit
-  type value = unit
+  type value = int
   type label = string
 
   let make () = ()
   let load _witness = ()
   let unload _witness = ()
-  let float _v = 0.
-  let label _witness = "blocks"
+  let float v = float_of_int v
+  let label _witness = "block"
   let diff a _b = a
-  let epsilon () = ()
-  let blit _witness _v = ()
-end
-
-module TimePerRun = struct
-  type witness = unit
-  type value = unit
-  type label = string
-
-  let make () = ()
-  let load _witness = ()
-  let unload _witness = ()
-  let float _v = 0.
-  let label _witness = "time-per-run"
-  let diff a _b = a
-  let epsilon () = ()
+  let epsilon () = 0
   let blit _witness _v = ()
 end
 
@@ -68,9 +38,7 @@ module Extension = struct
   include Extension
 
   let monotonic_clock = Measure.make (module Monotonic_clock)
-  let realtime_clock = Measure.make (module Realtime_clock)
-  let blocks = Measure.make (module Blocks)
-  let time_per_run = Measure.make (module TimePerRun)
+  let block = Measure.make (module Block)
 end
 
 module Instance = struct
@@ -78,14 +46,6 @@ module Instance = struct
 
   let monotonic_clock =
     Measure.instance (module Monotonic_clock) Extension.monotonic_clock
-
-  let realtime_clock =
-    Measure.instance (module Realtime_clock) Extension.realtime_clock
-
-  let blocks = Measure.instance (module Blocks) Extension.blocks
-
-  let time_per_run =
-    Measure.instance (module TimePerRun) Extension.time_per_run
 end
 
 (** TESTS **)
@@ -133,12 +93,6 @@ let test_sha512 =
 let test_whirlpool =
   Test.make_indexed ~name:"Digestif.whirlpool" ~args:len_list
     (digest_bytes Digestif.WHIRLPOOL)
-
-(* let test_blake2b = Test.make_indexed ~name:"Digestif.blake2b" ~args:len_list
-   (digest_bytes Digestif.BLAKE2B)
-
-   let test_blake2s = Test.make_indexed ~name:"Digestif.bake2s" ~args:len_list
-   (digest_bytes Digestif.BLAKE2S) *)
 
 (** TESTS **)
 
@@ -219,10 +173,7 @@ let () =
   let ols =
     Analyze.ols ~r_square:true ~bootstrap:0 ~predictors:Measure.[|run|]
   in
-  let instances =
-    Instance.
-      [minor_allocated; major_allocated; monotonic_clock; realtime_clock]
-  in
+  let instances = Instance.[monotonic_clock] in
   let tests =
     match Sys.argv with
     | [|_|] -> []
@@ -241,8 +192,8 @@ let () =
   in
   let measure_and_analyze test =
     let results =
-      Benchmark.all ~stabilize:true ~quota:(Benchmark.s 1.) ~run:3000 instances
-        test
+      Benchmark.all ~sampling:(`Linear 0) ~stabilize:true
+        ~quota:(Benchmark.s 1.) ~run:3000 instances test
     in
     List.map
       (fun x ->
