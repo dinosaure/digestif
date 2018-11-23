@@ -46,6 +46,8 @@ module Instance = struct
 
   let monotonic_clock =
     Measure.instance (module Monotonic_clock) Extension.monotonic_clock
+
+  let block = Measure.instance (module Block) Extension.block
 end
 
 (** TESTS **)
@@ -169,9 +171,20 @@ let setup_logs style_renderer level =
 
 let _, _ = setup_logs (Some `Ansi_tty) (Some Logs.Debug)
 
+let all ~sampling ~stabilize ~quota ~run instances test =
+  let tests = Test.set test in
+  let module ExtBlock = (val Extension.block) in
+  let blocks = List.map (fun i -> ExtBlock.T ((), i)) len_list in
+  List.map
+    (fun (test, block) ->
+      Benchmark.run ~sampling ~stabilize ~quota run (block :: instances) test
+      )
+    (zip tests blocks)
+
 let () =
   let ols =
-    Analyze.ols ~r_square:true ~bootstrap:0 ~predictors:Measure.[|run|]
+    Analyze.ols ~r_square:true ~bootstrap:0
+      ~predictors:[|Measure.label Instance.block|]
   in
   let instances = Instance.[monotonic_clock] in
   let tests =
@@ -192,8 +205,8 @@ let () =
   in
   let measure_and_analyze test =
     let results =
-      Benchmark.all ~sampling:(`Linear 0) ~stabilize:true
-        ~quota:(Benchmark.s 1.) ~run:3000 instances test
+      all ~sampling:(`Linear 0) ~stabilize:true (* *) ~quota:(Benchmark.s 1.)
+        ~run:3000 instances test
     in
     List.map
       (fun x ->
