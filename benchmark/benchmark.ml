@@ -180,6 +180,7 @@ let all ~sampling ~stabilize ~quota ~run instances test =
       Benchmark.run ~sampling ~stabilize ~quota run (block :: instances) test
       )
     (zip tests blocks)
+  |> Array.concat
 
 let () =
   let ols =
@@ -204,20 +205,11 @@ let () =
     | _ -> Fmt.invalid_arg "%s {create|set|unsafe_set|all}" Sys.argv.(1)
   in
   let measure_and_analyze test =
-    let results =
+    let result =
       all ~sampling:(`Linear 0) ~stabilize:true (* *) ~quota:(Benchmark.s 1.)
         ~run:3000 instances test
     in
-    List.map
-      (fun x ->
-        List.map
-          (fun result -> Analyze.analyze ols (Measure.label x) result)
-          results )
-      instances
+    List.map (fun x -> Analyze.analyze ols (Measure.label x) result) instances
   in
   let results = List.map measure_and_analyze tests in
-  List.iter
-    (fun (test, result) ->
-      Fmt.pr "---------- %s ----------\n%!" (Test.name test) ;
-      Fmt.pr "%a\n%!" pp (test, result) )
-    (zip tests results)
+  Fmt.pr "%a\n%!" Fmt.(Dump.list (Dump.list pp_result)) results
