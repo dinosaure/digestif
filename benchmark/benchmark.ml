@@ -2,7 +2,6 @@ open Bechamel
 open Toolkit
 
 let () = Printexc.record_backtrace true
-
 let block = 50
 
 module Monotonic_clock = struct
@@ -83,8 +82,7 @@ module Instance = struct
   let realtime_clock =
     Measure.instance (module Realtime_clock) Extension.realtime_clock
 
-  let blocks =
-    Measure.instance (module Blocks) Extension.blocks
+  let blocks = Measure.instance (module Blocks) Extension.blocks
 
   let time_per_run =
     Measure.instance (module TimePerRun) Extension.time_per_run
@@ -97,52 +95,50 @@ let () = Random.self_init ()
 let random_bytes len =
   let buf = Bytes.create len in
   let ic = open_in "/dev/urandom" in
-  really_input ic buf 0 len; close_in ic; buf
+  really_input ic buf 0 len ; close_in ic ; buf
 
 let digest_bytes digest len =
   Staged.stage (fun () -> Digestif.digest_bytes digest (random_bytes len))
 
-let len_list = (List.init block (fun i -> (i + 1) * 64 * 10))
+let len_list = List.init block (fun i -> (i + 1) * 64 * 10)
 
 let test_md5 =
-  Test.make_indexed ~name:"Digestif.md5"
-    ~args:len_list (digest_bytes Digestif.MD5)
+  Test.make_indexed ~name:"Digestif.md5" ~args:len_list
+    (digest_bytes Digestif.MD5)
 
 let test_sha1 =
-  Test.make_indexed ~name:"Digestif.sha1"
-    ~args:len_list (digest_bytes Digestif.SHA1)
+  Test.make_indexed ~name:"Digestif.sha1" ~args:len_list
+    (digest_bytes Digestif.SHA1)
 
 let test_rmd160 =
-  Test.make_indexed ~name:"Digestif.rmd160"
-    ~args:len_list (digest_bytes Digestif.RMD160)
+  Test.make_indexed ~name:"Digestif.rmd160" ~args:len_list
+    (digest_bytes Digestif.RMD160)
 
 let test_sha224 =
-  Test.make_indexed ~name:"Digestif.sha224"
-    ~args:len_list (digest_bytes Digestif.SHA224)
+  Test.make_indexed ~name:"Digestif.sha224" ~args:len_list
+    (digest_bytes Digestif.SHA224)
 
 let test_sha256 =
-  Test.make_indexed ~name:"Digestif.sha256"
-    ~args:len_list (digest_bytes Digestif.SHA256)
+  Test.make_indexed ~name:"Digestif.sha256" ~args:len_list
+    (digest_bytes Digestif.SHA256)
 
 let test_sha384 =
-  Test.make_indexed ~name:"Digestif.sha384"
-    ~args:len_list (digest_bytes Digestif.SHA384)
+  Test.make_indexed ~name:"Digestif.sha384" ~args:len_list
+    (digest_bytes Digestif.SHA384)
 
 let test_sha512 =
-  Test.make_indexed ~name:"Digestif.sha512"
-    ~args:len_list (digest_bytes Digestif.SHA512)
+  Test.make_indexed ~name:"Digestif.sha512" ~args:len_list
+    (digest_bytes Digestif.SHA512)
 
 let test_whirlpool =
-  Test.make_indexed ~name:"Digestif.whirlpool"
-    ~args:len_list (digest_bytes Digestif.WHIRLPOOL)
+  Test.make_indexed ~name:"Digestif.whirlpool" ~args:len_list
+    (digest_bytes Digestif.WHIRLPOOL)
 
-(* let test_blake2b =
-  Test.make_indexed ~name:"Digestif.blake2b"
-    ~args:len_list (digest_bytes Digestif.BLAKE2B)
+(* let test_blake2b = Test.make_indexed ~name:"Digestif.blake2b" ~args:len_list
+   (digest_bytes Digestif.BLAKE2B)
 
-let test_blake2s =
-  Test.make_indexed ~name:"Digestif.bake2s"
-    ~args:len_list (digest_bytes Digestif.BLAKE2S) *)
+   let test_blake2s = Test.make_indexed ~name:"Digestif.bake2s" ~args:len_list
+   (digest_bytes Digestif.BLAKE2S) *)
 
 (** TESTS **)
 
@@ -215,7 +211,7 @@ let setup_logs style_renderer level =
   Logs.set_level level ;
   Logs.set_reporter (reporter Fmt.stdout) ;
   let quiet = match style_renderer with Some _ -> true | None -> false in
-  (quiet, Fmt.stdout)
+  quiet, Fmt.stdout
 
 let _, _ = setup_logs (Some `Ansi_tty) (Some Logs.Debug)
 
@@ -238,9 +234,9 @@ let () =
     | [|_; "sha384"|] -> [test_sha384]
     | [|_; "sha512"|] -> [test_sha512]
     | [|_; "whirlpool"|] -> [test_whirlpool]
-    (* | [|_; "blake2b"|] -> [test_blake2b]
-    | [|_; "blake2s"|] -> [test_blake2s] *)
-    | [|_; "all"|] -> [test_md5; test_sha1; test_rmd160; test_sha224; test_sha256; test_sha384; test_sha512; test_whirlpool; (*test_blake2b; test_blake2s*)]
+    | [|_; "all"|] ->
+        [ test_md5; test_sha1; test_rmd160; test_sha224; test_sha256
+        ; test_sha384; test_sha512; test_whirlpool ]
     | _ -> Fmt.invalid_arg "%s {create|set|unsafe_set|all}" Sys.argv.(1)
   in
   let measure_and_analyze test =
@@ -249,7 +245,10 @@ let () =
         test
     in
     List.map
-      (fun x -> List.map (fun result -> Analyze.analyze ols (Measure.label x) result) results)
+      (fun x ->
+        List.map
+          (fun result -> Analyze.analyze ols (Measure.label x) result)
+          results )
       instances
   in
   let results = List.map measure_and_analyze tests in
@@ -257,30 +256,4 @@ let () =
     (fun (test, result) ->
       Fmt.pr "---------- %s ----------\n%!" (Test.name test) ;
       Fmt.pr "%a\n%!" pp (test, result) )
-    (zip tests results);
-  let reduced_results = List.nth results 0 in
-  (* let ols =
-    Analyze.ols ~r_square:true ~bootstrap:0 ~predictors:Measure.[|label Instance.blocks|]
-  in *)
-  let ransac = Analyze.ransac ~filter_outliers:true ~predictor:(Measure.label Instance.blocks)
-  in
-  let fct blocks =
-    let raw =
-      List.mapi
-        (fun i data ->
-          let est =
-          match Analyze.OLS.estimates data with
-            | Some estimates -> List.nth estimates 0
-            | None -> 0.
-          in
-          Measurement_raw.make ~measures:[|float_of_int i; est|] ~labels:[|Measure.label Instance.blocks; Measure.label Instance.time_per_run|] 1.0
-        ) blocks in
-    Analyze.analyze ransac (Measure.label Instance.time_per_run) (Array.of_list raw)
-  in
-  (* Fmt.pr "%a\n%!"
-    pp_result (fct reduced_results) *)
-  List.iter (fun r ->
-    Fmt.pr "%f %f\n%!" 
-      (Analyze.RANSAC.mean r)
-      (Analyze.RANSAC.error r)
-  ) (List.map fct reduced_results)
+    (zip tests results)
