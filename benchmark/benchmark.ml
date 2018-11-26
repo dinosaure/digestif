@@ -3,6 +3,7 @@ open Toolkit
 
 let () = Printexc.record_backtrace true
 let block = 50
+let factor = 10
 
 module Monotonic_clock = struct
   type witness = int
@@ -13,7 +14,7 @@ module Monotonic_clock = struct
   let load _witness = ()
   let unload _witness = ()
   let float v = Int64.to_float !v
-  let label _witness = "monotonic-clock"
+  let label _witness = "time (ns)"
   let diff a b = {contents= Int64.sub !b !a}
   let epsilon () = {contents= 0L}
   let blit witness v = v := Oclock.gettime witness
@@ -28,7 +29,7 @@ module Block = struct
   let load _witness = ()
   let unload _witness = ()
   let float v = float_of_int v
-  let label _witness = "block"
+  let label _witness = Fmt.strf "%d block" factor
   let diff a _b = a
   let epsilon () = 0
   let blit _witness _v = ()
@@ -66,22 +67,22 @@ let digest_bytes digest len =
 
 let block_of_kind : [< Digestif.kind] -> int = function
   | `SHA1 -> 64
-  | `BLAKE2B -> 128
+  | `MD5 -> 64
+  | `WHIRLPOOL -> 64
+  | `RMD160 -> 64
   | `BLAKE2S -> 64
+  | `BLAKE2B -> 128
   | `SHA256 -> 128
   | `SHA224 -> 128
   | `SHA384 -> 128
   | `SHA512 -> 128
-  | `MD5 -> 64
-  | `WHIRLPOOL -> 64
-  | `RMD160 -> 64
 
 let kind_of_hash : type k. k Digestif.hash -> k =
  fun hash ->
   let module X = (val Digestif.module_of hash) in
   X.kind
 
-let len_list length = List.init block (fun i -> (i + 1) * (length * 10))
+let len_list length = List.init block (fun i -> (i + 1) * (length * factor))
 
 let test_md5 =
   let hash = Digestif.md5 in
@@ -241,6 +242,15 @@ let all ~sampling ~stabilize ~quota ~run instances test =
     (zip tests blocks)
   |> Array.concat
 
+let pp_all ppf (titles, results) =
+  List.iter
+    (fun (title, result) ->
+      Fmt.pf ppf "%s: %a.\n%!"
+        (pad 30 @@ title)
+        Fmt.(Dump.list pp_result)
+        result )
+    (zip titles results)
+
 let () =
   let ols =
     Analyze.ols ~r_square:true ~bootstrap:0
@@ -278,4 +288,12 @@ let () =
     List.map (fun x -> Analyze.analyze ols (Measure.label x) result) instances
   in
   let results = List.map measure_and_analyze tests in
-  Fmt.pr "%a\n%!" Fmt.(Dump.list (Dump.list pp_result)) results
+  let titles =
+    match Sys.argv with
+    | [|_; "all"|] ->
+        [ "md5"; "sha1"; "rmd160"; "sha224"; "sha256"; "sha384"; "sha512"
+        ; "whirlpool"; "blake2b"; "blake2s" ]
+    | [|_; hash|] -> [hash]
+    | _ -> assert false
+  in
+  Fmt.pr "%a%!" pp_all (titles, results)
