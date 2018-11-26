@@ -97,6 +97,14 @@ let test_whirlpool =
   Test.make_indexed ~name:"Digestif.whirlpool" ~args:len_list
     (digest_bytes Digestif.WHIRLPOOL)
 
+let test_blake2b =
+  Test.make_indexed ~name:"Digestif.blake2b" ~args:len_list
+    (digest_bytes (Digestif.blake2b 64))
+
+let test_blake2s =
+  Test.make_indexed ~name:"Digestif.blake2s" ~args:len_list
+    (digest_bytes (Digestif.blake2s 32))
+
 (** TESTS **)
 
 let zip l1 l2 =
@@ -212,23 +220,23 @@ let () =
     | [|_; "sha384"|] -> [test_sha384]
     | [|_; "sha512"|] -> [test_sha512]
     | [|_; "whirlpool"|] -> [test_whirlpool]
+    | [|_; "blake2b"|] -> [test_blake2b]
+    | [|_; "blake2s"|] -> [test_blake2s]
     | [|_; "all"|] ->
         [ test_md5; test_sha1; test_rmd160; test_sha224; test_sha256
-        ; test_sha384; test_sha512; test_whirlpool ]
-    | _ -> Fmt.invalid_arg "%s {create|set|unsafe_set|all}" Sys.argv.(1)
+        ; test_sha384; test_sha512; test_whirlpool; test_blake2b; test_blake2s
+        ]
+    | _ ->
+        Fmt.invalid_arg
+          "%s \
+           {md5|sha1|rmd160|sha224|sha256|sha384|sha512|whirlpool|blake2b|blake2s|all}"
+          Sys.argv.(1)
   in
   let measure_and_analyze test =
     let result =
       all ~sampling:(`Linear 0) ~stabilize:true ~quota:(Benchmark.s 1.)
         ~run:3000 instances test
     in
-    Fmt.epr "%a\n%!"
-      (pp_dot
-         ~x:
-           ( Measure.label Instance.block
-           , Fmt.using (fun x -> int_of_float x / (64 * 10)) Fmt.int )
-         ~y:(Measure.label Instance.monotonic_clock, Fmt.float))
-      result ;
     List.map (fun x -> Analyze.analyze ols (Measure.label x) result) instances
   in
   let results = List.map measure_and_analyze tests in
