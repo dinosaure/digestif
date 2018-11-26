@@ -81,7 +81,7 @@ let kind_of_hash : type k. k Digestif.hash -> k =
   let module X = (val Digestif.module_of hash) in
   X.kind
 
-let len_list block = List.init block (fun i -> (i + 1) * block)
+let len_list length = List.init block (fun i -> (i + 1) * (length * 10))
 
 let test_md5 =
   let hash = Digestif.md5 in
