@@ -53,6 +53,7 @@ end
 (** TESTS **)
 
 let () = Random.self_init ()
+let ( <.> ) f g x = f (g x)
 
 let random_bytes len =
   let buf = Bytes.create len in
@@ -63,47 +64,84 @@ let digest_bytes digest len =
   let input = random_bytes len in
   Staged.stage (fun () -> Digestif.digest_bytes digest input)
 
-let len_list = List.init block (fun i -> (i + 1) * 64 * 10)
+let block_of_kind : [< Digestif.kind] -> int = function
+  | `SHA1 -> 64
+  | `BLAKE2B -> 128
+  | `BLAKE2S -> 64
+  | `SHA256 -> 128
+  | `SHA224 -> 128
+  | `SHA384 -> 128
+  | `SHA512 -> 128
+  | `MD5 -> 64
+  | `WHIRLPOOL -> 64
+  | `RMD160 -> 64
+
+let kind_of_hash : type k. k Digestif.hash -> k =
+ fun hash ->
+  let module X = (val Digestif.module_of hash) in
+  X.kind
+
+let len_list block = List.init block (fun i -> (i + 1) * block)
 
 let test_md5 =
-  Test.make_indexed ~name:"Digestif.md5" ~args:len_list
-    (digest_bytes Digestif.MD5)
+  let hash = Digestif.md5 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.md5" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_sha1 =
-  Test.make_indexed ~name:"Digestif.sha1" ~args:len_list
-    (digest_bytes Digestif.SHA1)
+  let hash = Digestif.sha1 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.sha1" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_rmd160 =
-  Test.make_indexed ~name:"Digestif.rmd160" ~args:len_list
-    (digest_bytes Digestif.RMD160)
+  let hash = Digestif.rmd160 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.rmd160" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_sha224 =
-  Test.make_indexed ~name:"Digestif.sha224" ~args:len_list
-    (digest_bytes Digestif.SHA224)
+  let hash = Digestif.sha224 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.sha224" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_sha256 =
-  Test.make_indexed ~name:"Digestif.sha256" ~args:len_list
-    (digest_bytes Digestif.SHA256)
+  let hash = Digestif.sha256 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.sha256" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_sha384 =
-  Test.make_indexed ~name:"Digestif.sha384" ~args:len_list
-    (digest_bytes Digestif.SHA384)
+  let hash = Digestif.sha384 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.sha384" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_sha512 =
-  Test.make_indexed ~name:"Digestif.sha512" ~args:len_list
-    (digest_bytes Digestif.SHA512)
+  let hash = Digestif.sha512 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.sha512" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_whirlpool =
-  Test.make_indexed ~name:"Digestif.whirlpool" ~args:len_list
-    (digest_bytes Digestif.WHIRLPOOL)
+  let hash = Digestif.whirlpool in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.whirlpool" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_blake2b =
-  Test.make_indexed ~name:"Digestif.blake2b" ~args:len_list
-    (digest_bytes (Digestif.blake2b 64))
+  let hash = Digestif.blake2b 64 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.blake2b" ~args:(len_list block)
+    (digest_bytes hash)
 
 let test_blake2s =
-  Test.make_indexed ~name:"Digestif.blake2s" ~args:len_list
-    (digest_bytes (Digestif.blake2s 32))
+  let hash = Digestif.blake2s 32 in
+  let block = block_of_kind (kind_of_hash hash) in
+  Test.make_indexed ~name:"Digestif.blake2s" ~args:(len_list block)
+    (digest_bytes hash)
 
 (** TESTS **)
 
@@ -194,7 +232,7 @@ let pp_dot ~x ~y ppf m =
 let all ~sampling ~stabilize ~quota ~run instances test =
   let tests = Test.set test in
   let module ExtBlock = (val Extension.block) in
-  let blocks = List.map (fun i -> ExtBlock.T ((), i)) len_list in
+  let blocks = List.init (List.length tests) (fun i -> ExtBlock.T ((), i)) in
   List.map
     (fun (test, block) ->
       Fmt.pr "Start to benchmark: %s.\n%!" (Test.Elt.name test) ;
