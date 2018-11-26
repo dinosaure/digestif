@@ -60,7 +60,8 @@ let random_bytes len =
   really_input ic buf 0 len ; close_in ic ; buf
 
 let digest_bytes digest len =
-  Staged.stage (fun () -> Digestif.digest_bytes digest (random_bytes len))
+  let input = random_bytes len in
+  Staged.stage (fun () -> Digestif.digest_bytes digest input)
 
 let len_list = List.init block (fun i -> (i + 1) * 64 * 10)
 
@@ -171,12 +172,24 @@ let setup_logs style_renderer level =
 
 let _, _ = setup_logs (Some `Ansi_tty) (Some Logs.Debug)
 
+let pp_dot ~x ~y ppf m =
+  let x, pp_x = x in
+  let y, pp_y = y in
+  Fmt.array
+    ~sep:Fmt.(const string "\n")
+    Fmt.(pair ~sep:Fmt.(const string ",") pp_x pp_y)
+    ppf
+    (Array.map
+       (fun m -> Measurement_raw.get ~label:x m, Measurement_raw.get ~label:y m)
+       m)
+
 let all ~sampling ~stabilize ~quota ~run instances test =
   let tests = Test.set test in
   let module ExtBlock = (val Extension.block) in
   let blocks = List.map (fun i -> ExtBlock.T ((), i)) len_list in
   List.map
     (fun (test, block) ->
+      Fmt.pr "Start to benchmark: %s.\n%!" (Test.Elt.name test) ;
       Benchmark.run ~sampling ~stabilize ~quota run (block :: instances) test
       )
     (zip tests blocks)
@@ -206,9 +219,16 @@ let () =
   in
   let measure_and_analyze test =
     let result =
-      all ~sampling:(`Linear 0) ~stabilize:true (* *) ~quota:(Benchmark.s 1.)
+      all ~sampling:(`Linear 0) ~stabilize:true ~quota:(Benchmark.s 1.)
         ~run:3000 instances test
     in
+    Fmt.epr "%a\n%!"
+      (pp_dot
+         ~x:
+           ( Measure.label Instance.block
+           , Fmt.using (fun x -> int_of_float x / (64 * 10)) Fmt.int )
+         ~y:(Measure.label Instance.monotonic_clock, Fmt.float))
+      result ;
     List.map (fun x -> Analyze.analyze ols (Measure.label x) result) instances
   in
   let results = List.map measure_and_analyze tests in
